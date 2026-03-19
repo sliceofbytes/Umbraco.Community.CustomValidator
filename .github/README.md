@@ -238,7 +238,7 @@ Disable result caching for development or debugging:
 
 ### Entity Flag Modes
 
-Custom Validator can display a flag icon on documents in the backoffice content tree to indicate validation errors are present. The `EntityFlagMode` setting controls when this flag is evaluated.
+Custom Validator can display a error icon on documents in the backoffice content tree to indicate validation errors are present. The `EntityFlagMode` setting controls when this flag is evaluated.
 
 | Mode | Value | Description |
 |------|-------|-------------|
