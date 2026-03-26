@@ -5,7 +5,7 @@
       "Description": "Software developer",
       "Url": "https://github.com/jawood1",
       "ImageUrl": "https://github.com/jawood1.png",
-      "SyncContributorsFromRepository": true
+      "SyncContributorsFromRepository": false
     },
     "Category": "Editor Tools",
     "Description": "A comprehensive document validation framework for Umbraco CMS that provides real-time content validation with a backoffice UI. Display validation results directly in the Umbraco backoffice with support for multi-culture content, severity levels (Error, Warning, Info), and automatic publish blocking when errors are present.",

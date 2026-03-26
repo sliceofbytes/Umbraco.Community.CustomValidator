@@ -20,7 +20,7 @@ export const manifests = [
         alias: "CustomValidator.WorkspaceView.Validation",
         name: "Validation Workspace View",
         element: () => import("./views/validation-view.element.js"),
-        weight: 1,
+        weight: 10,
         meta: {
             label: "Validation",
             pathname: "validation",
