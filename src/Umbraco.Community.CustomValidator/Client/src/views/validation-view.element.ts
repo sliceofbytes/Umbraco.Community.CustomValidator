@@ -9,7 +9,7 @@ import type { ValidationResult, NotificationColor, ValidationMessage } from '../
 import { ValidationSeverity } from '../validation/types.js';
 
 const SAVE_DELAY_MS = 500;
-const INITIAL_VALIDATION_DELAY_MS = 1000;
+const INITIAL_VALIDATION_DELAY_MS = 500;
 
 const SEVERITY_ORDER: Record<ValidationSeverity, number> = {
     [ValidationSeverity.Error]: 0,

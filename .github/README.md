@@ -13,7 +13,8 @@ Custom Validator is a validation framework for Umbraco backoffice that provides 
 - 🚫 **Publish Prevention** - Automatically blocks publishing when validation errors exist
 - 📊 **Severity Levels** - Categorize validation messages as Error, Warning, or Info
 - 🎨 **Validation Tab** - Dedicated validation tab in the content workspace with color-coded messages
-- 🔧 **Easy to Extend** - Simple base class for creating custom validators
+- 🚩 **Tree Flags** - Configurable flag icons on the content tree to surface validation errors at a glance
+- 🔧**Easy to Extend** - Simple base class for creating custom validators
 - 📝 **Type-Safe** - Built with strongly-typed models and enums
 
 ## Screenshots
@@ -177,7 +178,8 @@ Customize the validation behavior by adding settings to your `appsettings.json`:
 {
   "CustomValidator": {
     "TreatWarningsAsErrors": false,
-    "CacheExpirationMinutes": 30
+    "CacheExpirationMinutes": 30,
+    "EntityFlagMode": "Lazy"
   }
 }
 ```
@@ -188,6 +190,7 @@ Customize the validation behavior by adding settings to your `appsettings.json`:
 |---------|------|---------|-------------|
 | `TreatWarningsAsErrors` | `bool` | `false` | When `true`, treats all validation warnings as errors, blocking publish operations when warnings are present |
 | `CacheExpirationMinutes` | `int` | `30` | Duration in minutes that validation results are cached. Set to `0` to disable caching |
+| `EntityFlagMode` | `string` | `Lazy` | Controls when validation flags appear on documents in the backoffice tree. See [Entity Flag Modes](#entity-flag-modes) |
 
 ### Examples
 
@@ -229,6 +232,46 @@ Disable result caching for development or debugging:
         "CacheExpirationMinutes": 0
       }
     }
+  }
+}
+```
+
+### Entity Flag Modes
+
+Custom Validator can display a error icon on documents in the backoffice content tree to indicate validation errors are present. The `EntityFlagMode` setting controls when this flag is evaluated.
+
+| Mode | Value | Description |
+|------|-------|-------------|
+| `Lazy` | `1` (default) | Flag is shown only after the document has been opened and validated in the backoffice. Lowest overhead — reads from cache only |
+| `Eager` | `2` | Flag is evaluated immediately when the tree loads. If no cached result exists, validation runs on-demand. Ensures flags are always accurate but increases server load |
+| `None` | `0` | Flags are disabled entirely. No validation status is checked when rendering the tree |
+
+#### Lazy Mode (Default)
+Flags appear after a document has been visited. Ideal for most sites:
+```json
+{
+  "CustomValidator": {
+    "EntityFlagMode": "Lazy"
+  }
+}
+```
+
+#### Eager Mode
+Flags appear immediately on tree load, even for unvisited documents. Best for editorial workflows where all content must be valid before publishing:
+```json
+{
+  "CustomValidator": {
+    "EntityFlagMode": "Eager"
+  }
+}
+```
+
+#### Disable Flags
+Remove tree flags entirely if you only want validation in the workspace tab:
+```json
+{
+  "CustomValidator": {
+    "EntityFlagMode": "None"
   }
 }
 ```

@@ -1,5 +1,5 @@
-﻿using Umbraco.Community.CustomValidator.Enums;
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
+using Umbraco.Community.CustomValidator.Enums;
 
 namespace Umbraco.Community.CustomValidator.Models;
 

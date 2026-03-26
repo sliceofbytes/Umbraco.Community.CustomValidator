@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -24,6 +25,7 @@ public sealed class ContentValidationNotificationHandlerTests
 {
     private Mock<IUmbracoContextAccessor> _umbracoContextAccessorMock = null!;
     private CustomValidationCacheService _validationCacheService = null!;
+    private CustomValidationStatusCache _statusCache = null!;
     private CustomValidationService _validationService = null!;
     private Mock<IOptions<CustomValidatorOptions>> _optionsMock = null!;
     private Mock<ILogger<ContentValidationNotificationHandler>> _loggerMock = null!;
@@ -44,6 +46,7 @@ public sealed class ContentValidationNotificationHandlerTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHybridCache();
+        services.AddMemoryCache();
 
         _serviceProvider = services.BuildServiceProvider();
 
@@ -73,9 +76,16 @@ public sealed class ContentValidationNotificationHandlerTests
         languageServiceMock.Setup(x => x.GetDefaultIsoCodeAsync())
             .ReturnsAsync("en-GB");
 
+        _statusCache = new CustomValidationStatusCache(
+            _serviceProvider.GetRequiredService<IMemoryCache>(),
+            _optionsMock.Object,
+            _serviceProvider.GetRequiredService<ILogger<CustomValidationStatusCache>>());
+
         _validationService = new CustomValidationService(
             validatorRegistry,
             _validationCacheService,
+            _statusCache,
+            _optionsMock.Object,
             variationContextMock.Object,
             languageServiceMock.Object,
             _serviceProvider.GetRequiredService<ILogger<CustomValidationService>>());
@@ -86,6 +96,7 @@ public sealed class ContentValidationNotificationHandlerTests
         _sut = new ContentValidationNotificationHandler(
             _umbracoContextAccessorMock.Object,
             _validationCacheService,
+            _statusCache,
             _validationService,
             _optionsMock.Object,
             _loggerMock.Object);
@@ -189,6 +200,7 @@ public sealed class ContentValidationNotificationHandlerTests
         var sut = new ContentValidationNotificationHandler(
             _umbracoContextAccessorMock.Object,
             _validationCacheService,
+            _statusCache,
             validationService,
             _optionsMock.Object,
             _loggerMock.Object);
@@ -219,6 +231,7 @@ public sealed class ContentValidationNotificationHandlerTests
         var sut = new ContentValidationNotificationHandler(
             _umbracoContextAccessorMock.Object,
             _validationCacheService,
+            _statusCache,
             validationService,
             _optionsMock.Object,
             _loggerMock.Object);
@@ -252,6 +265,7 @@ public sealed class ContentValidationNotificationHandlerTests
         var sut = new ContentValidationNotificationHandler(
             _umbracoContextAccessorMock.Object,
             _validationCacheService,
+            _statusCache,
             validationService,
             _optionsMock.Object,
             _loggerMock.Object);
@@ -290,6 +304,7 @@ public sealed class ContentValidationNotificationHandlerTests
         var sut = new ContentValidationNotificationHandler(
             _umbracoContextAccessorMock.Object,
             _validationCacheService,
+            _statusCache,
             validationService,
             _optionsMock.Object,
             _loggerMock.Object);
@@ -321,6 +336,7 @@ public sealed class ContentValidationNotificationHandlerTests
         var sut = new ContentValidationNotificationHandler(
             _umbracoContextAccessorMock.Object,
             _validationCacheService,
+            _statusCache,
             validationService,
             _optionsMock.Object,
             _loggerMock.Object);
@@ -504,9 +520,16 @@ public sealed class ContentValidationNotificationHandlerTests
         var variationContextMock = new Mock<IVariationContextAccessor>();
         var languageServiceMock = new Mock<ILanguageService>();
 
+        var statusCacheError = new CustomValidationStatusCache(
+            sp.GetRequiredService<IMemoryCache>(),
+            _optionsMock.Object,
+            sp.GetRequiredService<ILogger<CustomValidationStatusCache>>());
+
         return new CustomValidationService(
             validatorRegistry,
             cacheService,
+            statusCacheError,
+            _optionsMock.Object,
             variationContextMock.Object,
             languageServiceMock.Object,
             sp.GetRequiredService<ILogger<CustomValidationService>>());
@@ -544,9 +567,16 @@ public sealed class ContentValidationNotificationHandlerTests
         var variationContextMock = new Mock<IVariationContextAccessor>();
         var languageServiceMock = new Mock<ILanguageService>();
 
+        var statusCacheWarning = new CustomValidationStatusCache(
+            sp.GetRequiredService<IMemoryCache>(),
+            _optionsMock.Object,
+            sp.GetRequiredService<ILogger<CustomValidationStatusCache>>());
+
         return new CustomValidationService(
             validatorRegistry,
             cacheService,
+            statusCacheWarning,
+            _optionsMock.Object,
             variationContextMock.Object,
             languageServiceMock.Object,
             sp.GetRequiredService<ILogger<CustomValidationService>>());
@@ -586,9 +616,16 @@ public sealed class ContentValidationNotificationHandlerTests
         var variationContextMock = new Mock<IVariationContextAccessor>();
         var languageServiceMock = new Mock<ILanguageService>();
 
+        var statusCacheConditional = new CustomValidationStatusCache(
+            sp.GetRequiredService<IMemoryCache>(),
+            _optionsMock.Object,
+            sp.GetRequiredService<ILogger<CustomValidationStatusCache>>());
+
         return new CustomValidationService(
             validatorRegistry,
             cacheService,
+            statusCacheConditional,
+            _optionsMock.Object,
             variationContextMock.Object,
             languageServiceMock.Object,
             sp.GetRequiredService<ILogger<CustomValidationService>>());

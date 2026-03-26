@@ -4,17 +4,18 @@ using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Models.PublishedContent;
 using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Core.Web;
-using Umbraco.Community.CustomValidator.Enums;
-using Umbraco.Community.CustomValidator.Models;
+using Umbraco.Community.CustomValidator.Extensions;
 using Umbraco.Community.CustomValidator.Services;
 using Umbraco.Community.CustomValidator.Validation;
 using Umbraco.Extensions;
 
 namespace Umbraco.Community.CustomValidator.Notifications;
 
+
 public sealed class ContentValidationNotificationHandler(
     IUmbracoContextAccessor umbracoContextAccessor,
     CustomValidationCacheService cacheService,
+    CustomValidationStatusCache statusCache,
     CustomValidationService validationService,
     IOptions<CustomValidatorOptions> options,
     ILogger<ContentValidationNotificationHandler> logger)
@@ -30,6 +31,7 @@ public sealed class ContentValidationNotificationHandler(
         foreach (var entity in notification.SavedEntities)
         {
             await cacheService.ClearForDocumentAsync(entity.Key, cancellationToken);
+            statusCache.ClearForDocument(entity.Key);
         }
     }
 
@@ -87,6 +89,8 @@ public sealed class ContentValidationNotificationHandler(
         List<string> cultures,
         CancellationToken cancellationToken)
     {
+        var treatWarningsAsErrors = options.Value.TreatWarningsAsErrors;
+
         if (cultures.Count > 0)
         {
             // Variant content - validate each culture
@@ -94,10 +98,10 @@ public sealed class ContentValidationNotificationHandler(
             {
                 var response = await validationService.ExecuteValidationAsync(content, culture, cancellationToken);
 
-                if (!HasValidationErrors(response))
+                if (!response.HasValidationErrors(treatWarningsAsErrors))
                     continue;
 
-                var cultureErrors = CountErrors(response);
+                var cultureErrors = response.CountErrors(treatWarningsAsErrors);
                 return (true, $"Cannot publish '{content.Name}' (culture: {culture}): {cultureErrors} validation error(s) found.");
             }
         }
@@ -106,31 +110,14 @@ public sealed class ContentValidationNotificationHandler(
             // Invariant content
             var response = await validationService.ExecuteValidationAsync(content, null, cancellationToken);
 
-            if (!HasValidationErrors(response))
+            if (!response.HasValidationErrors(treatWarningsAsErrors))
                 return (false, string.Empty);
 
-            int errorCount = CountErrors(response);
+            int errorCount = response.CountErrors(treatWarningsAsErrors);
+
             return (true, $"Cannot publish '{content.Name}': {errorCount} validation error(s) found.");
         }
 
         return (false, string.Empty);
-    }
-
-    private bool HasValidationErrors(ValidationResponse response)
-    {
-        return response is { HasValidator: true, Messages: not null } &&
-               response.Messages.Any(m => IsError(m.Severity));
-    }
-
-    private bool IsError(ValidationSeverity severity)
-    {
-        return options.Value.TreatWarningsAsErrors
-            ? severity == ValidationSeverity.Error || severity == ValidationSeverity.Warning
-            : severity == ValidationSeverity.Error;
-    }
-
-    private int CountErrors(ValidationResponse response)
-    {
-        return response.Messages?.Count(m => IsError(m.Severity)) ?? 0;
     }
 }

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -18,6 +19,7 @@ public sealed class CustomValidationServiceTests
 {
     private CustomValidatorRegistry _validatorRegistry = null!;
     private CustomValidationCacheService _cacheService = null!;
+    private CustomValidationStatusCache _statusCache = null!;
     private Mock<IVariationContextAccessor> _variationContextAccessorMock = null!;
     private Mock<ILanguageService> _languageServiceMock = null!;
     private Mock<ILogger<CustomValidationService>> _loggerMock = null!;
@@ -33,6 +35,7 @@ public sealed class CustomValidationServiceTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHybridCache();
+        services.AddMemoryCache();
 
         _serviceProvider = services.BuildServiceProvider();
         _hybridCache = _serviceProvider.GetRequiredService<HybridCache>();
@@ -65,9 +68,16 @@ public sealed class CustomValidationServiceTests
         _languageServiceMock = new Mock<ILanguageService>();
         _loggerMock = new Mock<ILogger<CustomValidationService>>();
 
+        _statusCache = new CustomValidationStatusCache(
+            _serviceProvider.GetRequiredService<IMemoryCache>(),
+            _optionsMock.Object,
+            _serviceProvider.GetRequiredService<ILogger<CustomValidationStatusCache>>());
+
         _sut = new CustomValidationService(
             _validatorRegistry,
             _cacheService,
+            _statusCache,
+            _optionsMock.Object,
             _variationContextAccessorMock.Object,
             _languageServiceMock.Object,
             _loggerMock.Object);
@@ -233,6 +243,8 @@ public sealed class CustomValidationServiceTests
         return new CustomValidationService(
             registry,
             _cacheService,
+            _statusCache,
+            _optionsMock.Object,
             _variationContextAccessorMock.Object,
             _languageServiceMock.Object,
             _loggerMock.Object);
@@ -264,6 +276,8 @@ public sealed class CustomValidationServiceTests
         return new CustomValidationService(
             registry,
             _cacheService,
+            _statusCache,
+            _optionsMock.Object,
             _variationContextAccessorMock.Object,
             _languageServiceMock.Object,
             _loggerMock.Object);

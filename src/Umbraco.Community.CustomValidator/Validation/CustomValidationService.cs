@@ -1,6 +1,9 @@
 ﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core.Models.PublishedContent;
 using Umbraco.Cms.Core.Services;
+using Umbraco.Community.CustomValidator.Enums;
+using Umbraco.Community.CustomValidator.Extensions;
 using Umbraco.Community.CustomValidator.Models;
 using Umbraco.Community.CustomValidator.Services;
 using Umbraco.Extensions;
@@ -12,7 +15,9 @@ namespace Umbraco.Community.CustomValidator.Validation;
 /// </summary>
 public sealed class CustomValidationService(
     CustomValidatorRegistry validatorRegistry,
-    CustomValidationCacheService validationCacheService,
+    CustomValidationCacheService validationCache,
+    CustomValidationStatusCache statusCache,
+    IOptions<CustomValidatorOptions> options,
     IVariationContextAccessor variationContextAccessor,
     ILanguageService languageService,
     ILogger<CustomValidationService> logger)
@@ -29,11 +34,14 @@ public sealed class CustomValidationService(
         string? culture,
         CancellationToken cancellationToken = default)
     {
+        var currentCulture = await GetCurrentCultureAsync(culture, content);
 
         if (!validatorRegistry.HasValidator(content))
         {
             logger.LogDebug("No validator configured for document {DocumentId}, content type: {ContentType}",
                 content.Key, content.ContentType.Alias);
+
+            statusCache.SetStatus(content.Key, ValidationStatus.Unknown, currentCulture);
 
             return new ValidationResponse
             {
@@ -43,12 +51,10 @@ public sealed class CustomValidationService(
             };
         }
 
-        return await validationCacheService.GetOrSetAsync(
+        var response = await validationCache.GetOrSetAsync(
             content.Key, culture,
             async _ =>
             {
-                var currentCulture = await GetCurrentCultureAsync(culture, content);
-
                 if (!string.IsNullOrEmpty(currentCulture))
                 {
                     variationContextAccessor.VariationContext = new VariationContext(currentCulture);
@@ -56,15 +62,23 @@ public sealed class CustomValidationService(
                 }
 
                 var validationMessages = await validatorRegistry.ValidateAsync(content);
-
-                return new ValidationResponse
+                var validationResponse = new ValidationResponse
                 {
                     ContentId = content.Key,
                     HasValidator = true,
                     Messages = validationMessages
                 };
 
+                var hasErrors = validationResponse.HasValidationErrors(options.Value.TreatWarningsAsErrors);
+                statusCache.SetStatus(content.Key, hasErrors, currentCulture);
+
+                return validationResponse;
             }, cancellationToken);
+
+            var cachedHasErrors = response.HasValidationErrors(options.Value.TreatWarningsAsErrors);
+            statusCache.SetStatus(content.Key, cachedHasErrors, currentCulture);
+
+            return response;
     }
 
     private async Task<string?> GetCurrentCultureAsync(string? culture, IPublishedContent content)
@@ -74,11 +88,17 @@ public sealed class CustomValidationService(
             return culture;
         }
 
-        var domainCulture = content.GetCultureFromDomains();
-
-        if (!string.IsNullOrEmpty(domainCulture))
+        try
         {
-            return domainCulture;
+            var domainCulture = content.GetCultureFromDomains();
+            if (!string.IsNullOrEmpty(domainCulture))
+            {
+                return domainCulture;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not resolve culture from domains for document {DocumentId}", content.Key);
         }
 
         return await languageService.GetDefaultIsoCodeAsync();

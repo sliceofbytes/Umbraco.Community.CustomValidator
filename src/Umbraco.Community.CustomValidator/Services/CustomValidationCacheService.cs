@@ -84,8 +84,6 @@ public sealed class CustomValidationCacheService(
         logger.LogInformation("Cleared all validation cache");
     }
 
-    #region Private Methods
-
     private static string GetCacheKey(Guid documentId, string? culture)
     {
         return $"{CacheKeyPrefix}_{documentId}_{culture ?? "invariant"}";
@@ -106,6 +104,4 @@ public sealed class CustomValidationCacheService(
 
     private static string GetCultureTag(Guid documentId, string? culture) 
         => $"{CacheKeyPrefix}:doc:{documentId}:culture:{culture ?? "invariant"}";
-
-    #endregion
 }

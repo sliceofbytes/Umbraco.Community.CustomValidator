@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -34,6 +35,7 @@ public sealed class DocumentValidationControllerTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHybridCache();
+        services.AddMemoryCache();
 
         var options = new CustomValidatorOptions
         {
@@ -67,9 +69,16 @@ public sealed class DocumentValidationControllerTests
         languageServiceMock.Setup(x => x.GetDefaultIsoCodeAsync())
             .ReturnsAsync("en-GB");
 
+        var statusCache = new CustomValidationStatusCache(
+            _serviceProvider.GetRequiredService<IMemoryCache>(),
+            optionsMock.Object,
+            _serviceProvider.GetRequiredService<ILogger<CustomValidationStatusCache>>());
+
         _validationExecutor = new CustomValidationService(
             customValidatorRegistry,
             cacheService,
+            statusCache,
+            optionsMock.Object,
             variationContextAccessorMock.Object,
             languageServiceMock.Object,
             _serviceProvider.GetRequiredService<ILogger<CustomValidationService>>());
@@ -316,6 +325,7 @@ public sealed class DocumentValidationControllerTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHybridCache();
+        services.AddMemoryCache();
         services.AddSingleton<TestValidator>();
 
         var sp = services.BuildServiceProvider();
@@ -338,9 +348,16 @@ public sealed class DocumentValidationControllerTests
         var variationContextMock = new Mock<IVariationContextAccessor>();
         var languageServiceMock = new Mock<ILanguageService>();
 
+        var statusCacheWithValidator = new CustomValidationStatusCache(
+            sp.GetRequiredService<IMemoryCache>(),
+            optionsMock.Object,
+            sp.GetRequiredService<ILogger<CustomValidationStatusCache>>());
+
         return new CustomValidationService(
             validatorRegistry,
             cacheService,
+            statusCacheWithValidator,
+            optionsMock.Object,
             variationContextMock.Object,
             languageServiceMock.Object,
             sp.GetRequiredService<ILogger<CustomValidationService>>());
@@ -360,6 +377,7 @@ public sealed class DocumentValidationControllerTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHybridCache();
+        services.AddMemoryCache();
 
         var validator = new TrackingValidator(onValidate);
         services.AddSingleton(validator);
@@ -386,9 +404,16 @@ public sealed class DocumentValidationControllerTests
         var variationContextMock = new Mock<IVariationContextAccessor>();
         var languageServiceMock = new Mock<ILanguageService>();
 
+        var statusCacheTracking = new CustomValidationStatusCache(
+            sp.GetRequiredService<IMemoryCache>(),
+            optionsMock.Object,
+            sp.GetRequiredService<ILogger<CustomValidationStatusCache>>());
+
         return new CustomValidationService(
             validatorRegistry,
             cacheService,
+            statusCacheTracking,
+            optionsMock.Object,
             variationContextMock.Object,
             languageServiceMock.Object,
             sp.GetRequiredService<ILogger<CustomValidationService>>());

@@ -21,7 +21,6 @@ public sealed class CustomValidatorRegistry
         _serviceScopeFactory = serviceScopeFactory ?? throw new ArgumentNullException(nameof(serviceScopeFactory));
         _validators = validators ?? throw new ArgumentNullException(nameof(validators));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _validators = validators;
     }
 
     public async Task<IEnumerable<ValidationMessage>> ValidateAsync(IPublishedContent content)
@@ -29,7 +28,7 @@ public sealed class CustomValidatorRegistry
         var validatorTypes = _validators.GetValidatorsFor(content.GetType());
         var messages = new List<ValidationMessage>();
 
-        using var scope = _serviceScopeFactory.CreateScope();
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
         var scopedProvider = scope.ServiceProvider;
 
         foreach (var validatorType in validatorTypes)
