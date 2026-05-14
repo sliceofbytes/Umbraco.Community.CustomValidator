@@ -40,7 +40,10 @@
                 </a>
                 <p class="post-meta @(showFullArticleOnListPage ? "mb-0" : "")">
                     @Umbraco.GetDictionaryValue("Article.Posted")
-                    @Umbraco.GetDictionaryValue("Article.By")@Html.Raw("&nbsp;")@author.Name
+                    @if(author != null) 
+                    {
+                        @Umbraco.GetDictionaryValue("Article.By")@Html.Raw("&nbsp;")@author.Name
+                    }
                     @Umbraco.GetDictionaryValue("Article.On") @article.ArticleDate.ToString("MMMM dd, yyyy")
                 </p>
                 @if (showFullArticleOnListPage && article.Categories != null && article.Categories.Any())
