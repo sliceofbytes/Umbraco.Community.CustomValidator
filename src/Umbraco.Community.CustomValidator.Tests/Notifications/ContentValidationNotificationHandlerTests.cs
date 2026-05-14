@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
+using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.PublishedContent;
@@ -23,7 +24,7 @@ namespace Umbraco.Community.CustomValidator.Tests.Notifications;
 [TestFixture]
 public sealed class ContentValidationNotificationHandlerTests
 {
-    private Mock<IUmbracoContextAccessor> _umbracoContextAccessorMock = null!;
+    private Mock<IUmbracoContextFactory> _umbracoContextFactoryMock = null!;
     private CustomValidationCacheService _validationCacheService = null!;
     private CustomValidationStatusCache _statusCache = null!;
     private CustomValidationService _validationService = null!;
@@ -90,11 +91,11 @@ public sealed class ContentValidationNotificationHandlerTests
             languageServiceMock.Object,
             _serviceProvider.GetRequiredService<ILogger<CustomValidationService>>());
 
-        _umbracoContextAccessorMock = new Mock<IUmbracoContextAccessor>();
+        _umbracoContextFactoryMock = new Mock<IUmbracoContextFactory>();
         _loggerMock = new Mock<ILogger<ContentValidationNotificationHandler>>();
 
         _sut = new ContentValidationNotificationHandler(
-            _umbracoContextAccessorMock.Object,
+            _umbracoContextFactoryMock.Object,
             _validationCacheService,
             _statusCache,
             _validationService,
@@ -198,7 +199,7 @@ public sealed class ContentValidationNotificationHandlerTests
 
         var validationService = CreateValidationServiceWithErrorValidator();
         var sut = new ContentValidationNotificationHandler(
-            _umbracoContextAccessorMock.Object,
+            _umbracoContextFactoryMock.Object,
             _validationCacheService,
             _statusCache,
             validationService,
@@ -229,7 +230,7 @@ public sealed class ContentValidationNotificationHandlerTests
 
         var validationService = CreateValidationServiceWithWarningValidator();
         var sut = new ContentValidationNotificationHandler(
-            _umbracoContextAccessorMock.Object,
+            _umbracoContextFactoryMock.Object,
             _validationCacheService,
             _statusCache,
             validationService,
@@ -263,7 +264,7 @@ public sealed class ContentValidationNotificationHandlerTests
         var validationService = CreateValidationServiceWithConditionalError(doc1, () => doc2Validated = true);
 
         var sut = new ContentValidationNotificationHandler(
-            _umbracoContextAccessorMock.Object,
+            _umbracoContextFactoryMock.Object,
             _validationCacheService,
             _statusCache,
             validationService,
@@ -302,7 +303,7 @@ public sealed class ContentValidationNotificationHandlerTests
 
         var validationService = CreateValidationServiceWithWarningValidator();
         var sut = new ContentValidationNotificationHandler(
-            _umbracoContextAccessorMock.Object,
+            _umbracoContextFactoryMock.Object,
             _validationCacheService,
             _statusCache,
             validationService,
@@ -334,7 +335,7 @@ public sealed class ContentValidationNotificationHandlerTests
 
         var validationService = CreateValidationServiceWithWarningValidator();
         var sut = new ContentValidationNotificationHandler(
-            _umbracoContextAccessorMock.Object,
+            _umbracoContextFactoryMock.Object,
             _validationCacheService,
             _statusCache,
             validationService,
@@ -361,8 +362,7 @@ public sealed class ContentValidationNotificationHandlerTests
     public async Task HandleAsync_ContentPublishing_ExceptionThrown_CancelsPublish()
     {
         // Arrange
-        var context = It.IsAny<IUmbracoContext>();
-        _umbracoContextAccessorMock.Setup(x => x.TryGetUmbracoContext(out context))
+        _umbracoContextFactoryMock.Setup(x => x.EnsureUmbracoContext())
             .Throws(new InvalidOperationException("Test exception"));
 
         var entity = CreateMockContent(Guid.NewGuid(), "Test");
@@ -376,6 +376,7 @@ public sealed class ContentValidationNotificationHandlerTests
         Assert.That(messages, Has.Count.EqualTo(1));
         Assert.That(messages.First().MessageType, Is.EqualTo(EventMessageType.Error));
         Assert.That(messages.First().Category, Does.Contain("Custom Validation Failed"));
+        Assert.That(messages.First().Message, Does.Contain(nameof(InvalidOperationException)));
     }
 
     [Test]
@@ -383,8 +384,7 @@ public sealed class ContentValidationNotificationHandlerTests
     {
         // Arrange
         var exception = new InvalidOperationException("Test exception");
-        var context = It.IsAny<IUmbracoContext>();
-        _umbracoContextAccessorMock.Setup(x => x.TryGetUmbracoContext(out context))
+        _umbracoContextFactoryMock.Setup(x => x.EnsureUmbracoContext())
             .Throws(exception);
 
         var entity = CreateMockContent(Guid.NewGuid(), "Test");
@@ -404,9 +404,41 @@ public sealed class ContentValidationNotificationHandlerTests
             Times.Once);
     }
 
+    [Test]
+    public void HandleAsync_ContentPublishing_OperationCancelled_PropagatesException()
+    {
+        // Arrange
+        // The handler now rethrows OperationCanceledException allowing
+        // for cooperative cancellation semantics for callers in background jobs.
+        _umbracoContextFactoryMock.Setup(x => x.EnsureUmbracoContext())
+            .Throws(new OperationCanceledException());
+
+        var entity = CreateMockContent(Guid.NewGuid(), "Test");
+        var notification = new ContentPublishingNotification(entity, new EventMessages());
+
+        // Act + Assert
+        Assert.ThrowsAsync<OperationCanceledException>(
+            async () => await _sut.HandleAsync(notification, CancellationToken.None));
+
+        // The publish should NOT have been cancelled via EventMessage in this case —
+        // cancellation is a different concern from validation failure.
+        Assert.That(notification.Messages.GetAll(), Is.Empty);
+    }
+
     #endregion
 
     #region Helper Methods
+
+    /// <summary>
+    /// Constructs a real <see cref="UmbracoContextReference"/> wrapping the given mock
+    /// <see cref="IUmbracoContext"/>. ensures Dispose is a noop so the reference wont
+    /// dispose underlying mock context or clear accessor on SUT block exit.
+    /// </summary>
+    private static UmbracoContextReference CreateContextReference(IUmbracoContext umbracoContext)
+    {
+        var accessorMock = new Mock<IUmbracoContextAccessor>();
+        return new UmbracoContextReference(umbracoContext, isRoot: false, accessorMock.Object);
+    }
 
     private void SetupUmbracoContext(IPublishedContent? content)
     {
@@ -418,9 +450,8 @@ public sealed class ContentValidationNotificationHandlerTests
 
         umbracoContextMock.Setup(x => x.Content).Returns(contentCacheMock.Object);
 
-        var context = umbracoContextMock.Object;
-        _umbracoContextAccessorMock.Setup(x => x.TryGetUmbracoContext(out context))
-            .Returns(true);
+        var reference = CreateContextReference(umbracoContextMock.Object);
+        _umbracoContextFactoryMock.Setup(x => x.EnsureUmbracoContext()).Returns(reference);
     }
 
     private void SetupUmbracoContextForMultipleDocuments(IEnumerable<(Guid key, IPublishedContent content)> documents)
@@ -435,9 +466,8 @@ public sealed class ContentValidationNotificationHandlerTests
 
         umbracoContextMock.Setup(x => x.Content).Returns(contentCacheMock.Object);
 
-        var context = umbracoContextMock.Object;
-        _umbracoContextAccessorMock.Setup(x => x.TryGetUmbracoContext(out context))
-            .Returns(true);
+        var reference = CreateContextReference(umbracoContextMock.Object);
+        _umbracoContextFactoryMock.Setup(x => x.EnsureUmbracoContext()).Returns(reference);
     }
 
     private static IPublishedContent CreateMockPublishedContent(Guid key)

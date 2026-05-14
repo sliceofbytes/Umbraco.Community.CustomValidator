@@ -13,13 +13,13 @@ namespace Umbraco.Community.CustomValidator.Notifications;
 
 
 public sealed class ContentValidationNotificationHandler(
-    IUmbracoContextAccessor umbracoContextAccessor,
+    IUmbracoContextFactory umbracoContextFactory,
     CustomValidationCacheService cacheService,
     CustomValidationStatusCache statusCache,
     CustomValidationService validationService,
     IOptions<CustomValidatorOptions> options,
     ILogger<ContentValidationNotificationHandler> logger)
-    :   INotificationAsyncHandler<ContentSavingNotification>,
+    : INotificationAsyncHandler<ContentSavingNotification>,
         INotificationAsyncHandler<ContentPublishingNotification>
 {
 
@@ -38,14 +38,23 @@ public sealed class ContentValidationNotificationHandler(
     /// <summary>
     /// Validates publishing entities and cancels the publish operation if validation errors are found.
     /// </summary>
+    /// <remarks>
+    /// Changed to use <see cref="IUmbracoContextFactory.EnsureUmbracoContext"/> rather than
+    /// <see cref="IUmbracoContextAccessor"/>, this makes handler more flexible and it will work
+    /// in any execution context: HTTP requests, background jobs, messaging, migrations, integration tests
+    /// EnsureUmbracoContext reuses an existing context if one is already present or creates
+    /// one if not, so there is no behavioral change in the common case.
+    /// </remarks>
     public async Task HandleAsync(ContentPublishingNotification notification, CancellationToken cancellationToken)
     {
         try
         {
-            var umbracoContext = umbracoContextAccessor.GetRequiredUmbracoContext();
+            using var contextReference = umbracoContextFactory.EnsureUmbracoContext();
+            var umbracoContext = contextReference.UmbracoContext;
 
             foreach (var entity in notification.PublishedEntities)
             {
+                cancellationToken.ThrowIfCancellationRequested();
 
                 var content = umbracoContext.Content.GetById(preview: true, entity.Key);
 
@@ -72,13 +81,26 @@ public sealed class ContentValidationNotificationHandler(
                 return;
             }
         }
+        catch (OperationCanceledException)
+        { 
+            // let it propagate allowing for cooperative cancellation in background jobs
+            logger.LogDebug(
+                "Custom Validator: Publish validation cancelled by cancellation token for {EntityCount} entit(y/ies). First entity key: {FirstEntityKey}.",
+                notification.PublishedEntities.Count(),
+                notification.PublishedEntities.FirstOrDefault()?.Key);
+            throw;
+        }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Custom Validator: Unexpected error during publish validation");
+            logger.LogError(
+                ex,
+                "Custom Validator: Unexpected error during publish validation for {EntityCount} entit(y/ies). First entity key: {FirstEntityKey}. Cancelling publish operation.",
+                notification.PublishedEntities.Count(),
+                notification.PublishedEntities.FirstOrDefault()?.Key);
 
             notification.CancelOperation(new EventMessage(
                 "Custom Validation Failed",
-                "Cannot publish: an unexpected error occurred. Please check the logs.",
+                $"Cannot publish: an unexpected error occurred ({ex.GetType().Name}). Please check the logs.",
                 EventMessageType.Error
             ));
         }
@@ -96,6 +118,8 @@ public sealed class ContentValidationNotificationHandler(
             // Variant content - validate each culture
             foreach (var culture in cultures)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var response = await validationService.ExecuteValidationAsync(content, culture, cancellationToken);
 
                 if (!response.HasValidationErrors(treatWarningsAsErrors))
