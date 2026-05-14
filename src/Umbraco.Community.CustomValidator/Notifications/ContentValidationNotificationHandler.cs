@@ -125,8 +125,7 @@ public sealed class ContentValidationNotificationHandler(
                 if (!response.HasValidationErrors(treatWarningsAsErrors))
                     continue;
 
-                var cultureErrors = response.CountErrors(treatWarningsAsErrors);
-                return (true, $"Cannot publish '{content.Name}' (culture: {culture}): {cultureErrors} validation error(s) found.");
+                return (true, BuildErrorMessage(content.Name, culture, response, treatWarningsAsErrors));
             }
         }
         else
@@ -137,11 +136,36 @@ public sealed class ContentValidationNotificationHandler(
             if (!response.HasValidationErrors(treatWarningsAsErrors))
                 return (false, string.Empty);
 
-            int errorCount = response.CountErrors(treatWarningsAsErrors);
-
-            return (true, $"Cannot publish '{content.Name}': {errorCount} validation error(s) found.");
+            return (true, BuildErrorMessage(content.Name, null, response, treatWarningsAsErrors));
         }
 
         return (false, string.Empty);
+    }
+
+    private static string BuildErrorMessage(string? contentName, string? culture, Models.ValidationResponse response, bool treatWarningsAsErrors)
+    {
+        var errorTexts = response.Messages?
+            .Where(m => m.Severity is Enums.ValidationSeverity.Error ||
+                       (treatWarningsAsErrors && m.Severity is Enums.ValidationSeverity.Warning))
+            .Select(m => m.Message?.Trim())
+            .Where(text => !string.IsNullOrEmpty(text))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? [];
+
+        var cultureSuffix = string.IsNullOrWhiteSpace(culture) ? string.Empty : $" ({culture})";
+        var header = $"Cannot publish '{contentName}'{cultureSuffix}";
+
+        if (errorTexts.Count == 0)
+        {
+            // Defensive fallback
+            var count = response.CountErrors(treatWarningsAsErrors);
+            var countText = count > 0 ? $"{count} " : string.Empty;
+
+            return $"{header}: {countText}validation error(s) found.";
+        }
+
+        var errorsSuffix = errorTexts.Count > 1 ? $" ({errorTexts.Count} errors)" : string.Empty;
+
+        return $"{header}{errorsSuffix}: {string.Join("; ", errorTexts)}";
     }
 }
