@@ -41,10 +41,9 @@ public sealed class ContentValidationNotificationHandler(
     /// <remarks>
     /// Uses <see cref="IUmbracoContextFactory.EnsureUmbracoContext"/> rather than relying on
     /// <see cref="IUmbracoContextAccessor"/> directly, so the handler works in any execution
-    /// context — HTTP requests, Hangfire jobs, MassTransit consumers, CLI tools, migrations,
+    /// context — HTTP requests, background jobs, messaging, migrations,
     /// integration tests, etc. <c>EnsureUmbracoContext</c> reuses an existing context if one
-    /// is already present (the normal HTTP path) or creates one if not, so there is no
-    /// behavioral change in the common case.
+    /// is already present or creates one if not, so there is no behavioral change in the common case.
     /// </remarks>
     public async Task HandleAsync(ContentPublishingNotification notification, CancellationToken cancellationToken)
     {
@@ -102,10 +101,11 @@ public sealed class ContentValidationNotificationHandler(
         }
     }
 
+
     private async Task<(bool HasErrors, string ErrorMessage)> ValidateDocumentAsync(
-        IPublishedContent content,
-        List<string> cultures,
-        CancellationToken cancellationToken)
+    IPublishedContent content,
+    List<string> cultures,
+    CancellationToken cancellationToken)
     {
         var treatWarningsAsErrors = options.Value.TreatWarningsAsErrors;
 
@@ -114,28 +114,80 @@ public sealed class ContentValidationNotificationHandler(
             // Variant content - validate each culture
             foreach (var culture in cultures)
             {
-                var response = await validationService.ExecuteValidationAsync(content, culture, cancellationToken);
+                var response = await validationService.ExecuteValidationAsync(
+                    content,
+                    culture,
+                    cancellationToken);
 
                 if (!response.HasValidationErrors(treatWarningsAsErrors))
                     continue;
 
-                var cultureErrors = response.CountErrors(treatWarningsAsErrors);
-                return (true, $"Cannot publish '{content.Name}' (culture: {culture}): {cultureErrors} validation error(s) found.");
+                return (
+                    true,
+                    BuildErrorMessage(
+                        content.Name,
+                        culture,
+                        response,
+                        treatWarningsAsErrors));
             }
         }
         else
         {
             // Invariant content
-            var response = await validationService.ExecuteValidationAsync(content, null, cancellationToken);
+            var response = await validationService.ExecuteValidationAsync(
+                content,
+                null,
+                cancellationToken);
 
             if (!response.HasValidationErrors(treatWarningsAsErrors))
                 return (false, string.Empty);
 
-            int errorCount = response.CountErrors(treatWarningsAsErrors);
-
-            return (true, $"Cannot publish '{content.Name}': {errorCount} validation error(s) found.");
+            return (
+                true,
+                BuildErrorMessage(
+                    content.Name,
+                    null,
+                    response,
+                    treatWarningsAsErrors));
         }
 
         return (false, string.Empty);
+    }
+
+    private static string BuildErrorMessage(string? contentName,
+        string? culture,
+        Models.ValidationResponse response,
+        bool treatWarningsAsErrors)
+    {
+        var errorTexts = response.Messages?
+            .Where(m => treatWarningsAsErrors
+                ? m.Severity is Enums.ValidationSeverity.Error
+                    or Enums.ValidationSeverity.Warning
+                : m.Severity == Enums.ValidationSeverity.Error)
+            .Select(m => m.Message?.Trim())
+            .Where(text => !string.IsNullOrWhiteSpace(text))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList()
+            ?? [];
+
+        var header = string.IsNullOrWhiteSpace(culture)
+            ? $"Cannot publish '{contentName}'"
+            : $"Cannot publish '{contentName}' ({culture})";
+
+        if (errorTexts.Count == 0)
+        {
+            // Defensive fallback.
+            var count = response.CountErrors(treatWarningsAsErrors);
+
+            return count > 0
+                ? $"{header}: {count} validation error(s) found."
+                : $"{header}: validation error(s) found.";
+        }
+
+        var countSuffix = errorTexts.Count > 1
+            ? $" ({errorTexts.Count} errors)"
+            : string.Empty;
+
+        return $"{header}{countSuffix}: {string.Join("; ", errorTexts)}";
     }
 }
